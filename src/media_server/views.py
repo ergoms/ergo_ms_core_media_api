@@ -16,6 +16,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from .accel import accel_redirect_enabled, accel_redirect_response
 from .client_ip import is_private_or_loopback, resolve_client_ip
 from .content_validation import ContentValidationError, validate_upload
 from .signing import verify_url, verify_upload_token
@@ -92,6 +93,26 @@ class ServeView(View):
         if not content_type:
             content_type = 'application/octet-stream'
 
+        filename = os.path.basename(file_path)
+        force_download = request.GET.get('download', '').lower() in ('1', 'true', 'yes')
+        unsafe_inline = (
+            'text/html', 'text/xml', 'application/xml', 'image/svg+xml', 'application/xhtml+xml',
+        )
+        if force_download or content_type in unsafe_inline:
+            attachment = True
+        elif content_type.startswith(('image/', 'video/', 'audio/', 'text/')):
+            attachment = False
+        else:
+            attachment = True
+
+        if accel_redirect_enabled():
+            logger.debug('Serve accel: path=%s, content_type=%s', file_path, content_type)
+            return accel_redirect_response(
+                file_path,
+                attachment=attachment,
+                content_type=content_type,
+            )
+
         file_size = storage.size(file_path)
         range_header = request.META.get('HTTP_RANGE')
 
@@ -102,16 +123,8 @@ class ServeView(View):
         response = FileResponse(fh, content_type=content_type)
         response['Content-Length'] = file_size
         response['Accept-Ranges'] = 'bytes'
-
-        filename = os.path.basename(file_path)
-        force_download = request.GET.get('download', '').lower() in ('1', 'true', 'yes')
-        _UNSAFE_INLINE_TYPES = ('text/html', 'text/xml', 'application/xml', 'image/svg+xml', 'application/xhtml+xml')
-        if force_download or content_type in _UNSAFE_INLINE_TYPES:
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        elif content_type.startswith(('image/', 'video/', 'audio/', 'text/')):
-            response['Content-Disposition'] = f'inline; filename="{filename}"'
-        else:
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        disposition = 'attachment' if attachment else 'inline'
+        response['Content-Disposition'] = f'{disposition}; filename="{filename}"'
 
         logger.debug('Serve 200: path=%s, content_type=%s, size=%s', file_path, content_type, file_size)
         return response

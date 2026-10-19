@@ -4,13 +4,14 @@ import hmac
 import logging
 import mimetypes
 import os
+import tempfile
 
 from django.conf import settings
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views import View
 
 from .client_ip import is_private_or_loopback, resolve_client_ip
-from .content_validation import ContentValidationError, validate_bytes
+from .content_validation import ContentValidationError, validate_upload
 from .storage import get_storage
 
 logger = logging.getLogger('media_server.internal')
@@ -95,6 +96,34 @@ class InternalReadView(View):
         return response
 
 
+def _spool_upload(request, max_size: int):
+    """Куски тела во временный файл. None — размер превышен, файл уже удалён."""
+    tmp = tempfile.NamedTemporaryFile(prefix='ergo-media-', delete=False)
+    total = 0
+    try:
+        while True:
+            chunk = request.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_size:
+                tmp.close()
+                os.unlink(tmp.name)
+                return None, total
+            tmp.write(chunk)
+        tmp.flush()
+        tmp.seek(0)
+        return tmp, total
+    except Exception:
+        name = tmp.name
+        tmp.close()
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+        raise
+
+
 class InternalWriteView(View):
     """PUT /internal/write/<path> — запись файла из core/api."""
 
@@ -119,30 +148,39 @@ class InternalWriteView(View):
                     status=413,
                 )
 
-        body = request.body
-        if not body:
-            return JsonResponse({'error': 'Пустое тело запроса'}, status=400)
-        if len(body) > max_size:
+        # Тело пишется на диск кусками: request.body держал бы весь файл в памяти.
+        tmp, total = _spool_upload(request, max_size)
+        if tmp is None:
             return JsonResponse(
                 {'error': f'Файл превышает допустимый размер ({max_size} байт)'},
                 status=413,
             )
-
-        content_mode = getattr(settings, 'MEDIA_API_CONTENT_VALIDATION', 'extension')
         try:
-            validate_bytes(file_path, body, mode=content_mode)
-        except ContentValidationError as exc:
-            return JsonResponse({'error': exc.message}, status=exc.status_code)
+            if total == 0:
+                return JsonResponse({'error': 'Пустое тело запроса'}, status=400)
 
-        storage = get_storage()
-        from io import BytesIO
-        try:
-            saved_path = storage.save(file_path, BytesIO(body))
-        except PermissionError:
-            return JsonResponse({'error': 'Недопустимый путь'}, status=400)
+            content_mode = getattr(settings, 'MEDIA_API_CONTENT_VALIDATION', 'extension')
+            try:
+                validate_upload(file_path, tmp, mode=content_mode)
+            except ContentValidationError as exc:
+                return JsonResponse({'error': exc.message}, status=exc.status_code)
 
-        logger.info('Internal write: path=%s, size=%d', saved_path, len(body))
-        return JsonResponse({'path': saved_path, 'size': len(body)}, status=201)
+            tmp.seek(0)
+            storage = get_storage()
+            try:
+                saved_path = storage.save(file_path, tmp)
+            except PermissionError:
+                return JsonResponse({'error': 'Недопустимый путь'}, status=400)
+        finally:
+            name = tmp.name
+            tmp.close()
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
+
+        logger.info('Internal write: path=%s, size=%d', saved_path, total)
+        return JsonResponse({'path': saved_path, 'size': total}, status=201)
 
 
 class InternalDeleteView(View):
