@@ -1,9 +1,8 @@
 """Отдача файла через nginx после проверки подписи.
 
-media_api больше не читает байты: заголовок X-Accel-Redirect указывает
-внутренний location, а Range и sendfile делает nginx.
-Прямой запрос на порт media_api при включённом флаге получит пустое тело —
-публичный путь только через nginx.
+Nginx при проксировании /serve/ ставит X-Ergo-Accel. Тогда media_api
+отвечает X-Accel-Redirect, а файл читает nginx. Прямой запрос на порт
+media_api этого заголовка не шлёт и получает байты.
 """
 
 from __future__ import annotations
@@ -16,6 +15,9 @@ from django.http import HttpResponse, JsonResponse
 MEDIA_ACCEL_PREFIX = '/_ergo_media/'
 
 
+ACCEL_REQUEST_HEADER = 'X-Ergo-Accel'
+
+
 def accel_redirect_enabled() -> bool:
     raw = os.getenv('MEDIA_ACCEL_REDIRECT', '').strip().lower()
     if raw in ('1', 'true', 'yes', 'on'):
@@ -23,6 +25,14 @@ def accel_redirect_enabled() -> bool:
     if raw in ('0', 'false', 'no', 'off'):
         return False
     return os.getenv('ERGO_PROXY', '').strip().lower() == 'nginx'
+
+
+def request_uses_accel(request) -> bool:
+    """Прямой /serve/ на порт media_api получает байты. Nginx сам ставит заголовок."""
+    if not accel_redirect_enabled():
+        return False
+    raw = (request.headers.get(ACCEL_REQUEST_HEADER) or '').strip().lower()
+    return raw in ('1', 'true', 'yes', 'on')
 
 
 def accel_redirect_response(file_path: str, *, attachment: bool, content_type: str):

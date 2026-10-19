@@ -16,7 +16,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from .accel import accel_redirect_enabled, accel_redirect_response
+from .accel import request_uses_accel, accel_redirect_response
 from .client_ip import is_private_or_loopback, resolve_client_ip
 from .content_validation import ContentValidationError, validate_upload
 from .signing import verify_url, verify_upload_token
@@ -105,7 +105,7 @@ class ServeView(View):
         else:
             attachment = True
 
-        if accel_redirect_enabled():
+        if request_uses_accel(request):
             logger.debug('Serve accel: path=%s, content_type=%s', file_path, content_type)
             return accel_redirect_response(
                 file_path,
