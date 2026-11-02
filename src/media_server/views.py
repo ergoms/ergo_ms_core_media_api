@@ -16,13 +16,15 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from core.shared.media_zone_http import MediaZoneError
+from core.shared.system_version import get_system_version
+
 from .accel import request_uses_accel, accel_redirect_response
 from .client_ip import is_private_or_loopback, resolve_client_ip
 from .content_validation import ContentValidationError, validate_upload
 from .signing import verify_url, verify_upload_token
 from .storage import get_storage
 from .upload_quota import check_upload_quota
-from core.shared.system_version import get_system_version
 
 logger = logging.getLogger('media_server.views')
 
@@ -71,7 +73,10 @@ class ServeView(View):
         storage = get_storage()
         try:
             file_exists = storage.exists(file_path)
-        except Exception as e:
+        except MediaZoneError:
+            logger.warning('Serve 502: зона недоступна, path=%s', file_path)
+            return JsonResponse({'error': 'Зона хранения недоступна'}, status=502)
+        except Exception:
             logger.exception('Serve: ошибка проверки существования файла, path=%s', file_path)
             file_exists = False
         if not file_exists:
@@ -105,7 +110,8 @@ class ServeView(View):
         else:
             attachment = True
 
-        if request_uses_accel(request):
+        uses_accel = getattr(storage, 'uses_accel', lambda _path: True)(file_path)
+        if request_uses_accel(request) and uses_accel:
             logger.debug('Serve accel: path=%s, content_type=%s', file_path, content_type)
             return accel_redirect_response(
                 file_path,

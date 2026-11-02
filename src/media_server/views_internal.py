@@ -161,7 +161,8 @@ class InternalWriteView(View):
 
             content_mode = getattr(settings, 'MEDIA_API_CONTENT_VALIDATION', 'extension')
             try:
-                validate_upload(file_path, tmp, mode=content_mode)
+                # Страницы парсера — .html. Браузерный /upload/ этот флаг не получает.
+                validate_upload(file_path, tmp, mode=content_mode, allow_page_html=True)
             except ContentValidationError as exc:
                 return JsonResponse({'error': exc.message}, status=exc.status_code)
 

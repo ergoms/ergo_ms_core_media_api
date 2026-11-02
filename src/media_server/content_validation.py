@@ -298,11 +298,18 @@ def validate_upload(
     *,
     allowed_types: Iterable[str] | None = None,
     mode: str | None = None,
+    allow_page_html: bool = False,
 ) -> ValidationResult:
-    """Проверка пользовательской загрузки (UploadView)."""
+    """Проверка загрузки.
+
+    ``allow_page_html`` только у служебной записи: парсер хранит страницу
+    как .html. Браузерный upload этот флаг не ставит.
+    """
     mode_n = normalize_mode(mode)
     ext = extension_of(filename)
-    allowed = _resolve_allowed(allowed_types)
+    allowed = set(_resolve_allowed(allowed_types))
+    if allow_page_html:
+        allowed.update(('html', 'htm'))
 
     if not ext:
         raise ContentValidationError('Отсутствует расширение файла')
@@ -310,7 +317,8 @@ def validate_upload(
         raise ContentValidationError(f'Тип файла .{ext} не разрешён')
 
     sniffed: str | None = None
-    if mode_rank(mode_n) >= MODE_RANK[MODE_EXTENSION_AND_MAGIC]:
+    page_html = allow_page_html and ext in {'html', 'htm'}
+    if mode_rank(mode_n) >= MODE_RANK[MODE_EXTENSION_AND_MAGIC] and not page_html:
         head = _peek_bytes(file_obj_or_bytes)
         sniffed = _check_magic(ext, head)
 

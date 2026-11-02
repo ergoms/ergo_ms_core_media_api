@@ -10,9 +10,12 @@ logger = logging.getLogger('media_server.storage')
 
 class LocalFileStorage(BaseStorage):
 
-    def __init__(self, root_path: str):
+    def __init__(self, root_path: str, *, create: bool = True):
         self._root = Path(root_path).resolve()
-        self._root.mkdir(parents=True, exist_ok=True)
+        if create:
+            self._root.mkdir(parents=True, exist_ok=True)
+        elif not self._root.is_dir():
+            raise FileNotFoundError(f'Каталог зоны не смонтирован: {self._root}')
 
     @property
     def root(self) -> Path:
