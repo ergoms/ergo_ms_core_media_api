@@ -15,7 +15,7 @@
 
 Серверная часть ядра, которая вызывает media_api: `core/api/src/core/utils/media_client/`, `media_signing.py`. Общая HMAC-логика подписи — `core/shared/media_hmac.py`. Точка входа процесса — `core/api/scripts/start_media_api.py`.
 
-Ключи `MEDIA_API_*`, пути и лимиты загрузок — [`env/media.env.example`](../../env/media.env.example). Зоны по префиксу пути — [`media_zones.yaml`](../../media_zones.yaml) в корне: `remote` (другой media_api) или `local` (каталог на другом диске). Пустой адрес удалённой зоны её выключает. Перенос уже лежащих файлов: `ergoms api relocate_media_zone`. За nginx смотрите прокси в [`env/nginx.env.example`](../../env/nginx.env.example) ([`.cursor/rules/deployment-infra.mdc`](../../.cursor/rules/deployment-infra.mdc)); публичный URL media — `MEDIA_API_URL` или `MEDIA_API_HOST` / `MEDIA_API_PROTOCOL` во фрагменте media.
+Ключи `MEDIA_API_*`, пути и лимиты загрузок — [`env/media.env.example`](../../env/media.env.example). Зоны по префиксу пути — локальный `media_zones.yaml` в корне (образец [`media_zones.yaml.example`](../../media_zones.yaml.example), в git его нет): `remote` (другой media_api) или `local` (каталог на другом диске). Пустой адрес удалённой зоны её выключает. Перенос уже лежащих файлов: `ergoms api relocate_media_zone`. За nginx смотрите прокси в [`env/nginx.env.example`](../../env/nginx.env.example) ([`.cursor/rules/deployment-infra.mdc`](../../.cursor/rules/deployment-infra.mdc)); публичный URL media — `MEDIA_API_URL` или `MEDIA_API_HOST` / `MEDIA_API_PROTOCOL` во фрагменте media.
 
 ## Правила для разработчиков
 
